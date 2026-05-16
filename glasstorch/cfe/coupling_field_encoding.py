@@ -74,7 +74,9 @@ class CouplingFieldEncoding:
                 dynamic_set(self.raw_cfe, targets, J)
 
                 J_bar = torch.log(torch.abs(J)) # This will be the adjusted coupling coefficient, once all the factors from the combinatoric layers below have been applied. We will iteratively adjust J_bar as we move up the combinatoric layers, and then assign it to the cfe at the end of the loop.
+                J_bar = J_bar.to(self.attributes.device())
                 J_bar_sign = torch.sign(J)
+                J_bar_sign = J_bar_sign.to(self.attributes.device())
                 '''
                 The term "padrito" here is not out-of-pocket nonsense (although effectively it is).
                 It makes perfect sense as a formal name of a sub-aspect indexed by the layers down from a subject in a infinite dimensional polytope theory that is in my personal mathematical canon.
@@ -92,9 +94,11 @@ class CouplingFieldEncoding:
 
                     subset_cardinality = combinatoric_layer - padrito
                     correction_power = (-1)**(padrito) # This is the alternating form that is critical to the whole construction.
+                    correction_power = torch.tensor(correction_power, device=self.attributes.device())
 
                     for subset in itertools.combinations(index_tuple, subset_cardinality):
                         subset_targets = list_to_target_dict(subset, scope=1)
+
                         J_bar += correction_power * dynamic_index(self.cfe, subset_targets) # This is the iterative adjustment of J_bar as we move up the combinatoric layers.
                         J_bar_sign *= dynamic_index(self.cfe_sign, subset_targets)**correction_power # This is the iterative adjustment of J_bar_sign as we move up the combinatoric layers.
 
