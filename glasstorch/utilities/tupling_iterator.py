@@ -13,6 +13,6 @@ class TuplingIterator:
 
     def __iter__(self):
         if self.no_repeats:
-            return itertools.permutations(range(self.N), self.tuple_size)
+            return itertools.combinations(range(self.N), self.tuple_size)
         else:
             return itertools.product(range(self.N), repeat=self.tuple_size)

@@ -1,7 +1,7 @@
-import pytorch as torch
+import torch
 import itertools
 from ..utilities.tupling_iterator import TuplingIterator
-from ..utilities.dynamic_index import dynamic_index, list_to_target_dict
+from ..utilities.dynamic_index import dynamic_index, dynamic_set, list_to_target_dict
 
 class CouplingFieldEncoding:
     def __init__(self, attributes):
@@ -10,7 +10,7 @@ class CouplingFieldEncoding:
 
         self.cfe = self._initialize_cfe() # Proper Coupling Field Encoding
         self.cfe_sign = self.cfe.clone() # Keeps track of the signs of cfe for the log space transformation.
-        self.raw_cfe = self.cfe.clone() # This contains the raw coupling coefficients, as expected in the hamiltonian. By contrast, the cfe has recursive corrections built into the embedding, so it is not interpretable in the same way as the raw_cfe.
+        self.raw_cfe = self._initialize_cfe(raw=True) # This contains the raw coupling coefficients, as expected in the hamiltonian. By contrast, the cfe has recursive corrections built into the embedding, so it is not interpretable in the same way as the raw_cfe.
 
         if self.is_quenched:
             if self.attributes.mixture_type == "pure":
@@ -21,8 +21,11 @@ class CouplingFieldEncoding:
     '''
     Returns a tensor of shape (2, 2, ..., 2) with N dimensions of all 1s. This is the defult template for the coupling field encoding and will be adjusted for the quenched spin glass per the attributes of the spin glass.
     '''
-    def _initialize_cfe(self):
-        cfe = torch.ones(*([2]* self.attributes.N), device=self.attributes.device())
+    def _initialize_cfe(self, raw=False):
+        if raw:
+            cfe = torch.ones(*([2]* self.attributes.N), device=self.attributes.device())
+        else:
+            cfe = torch.zeros(*([2]* self.attributes.N), device=self.attributes.device())
         return cfe
     
     '''
@@ -37,13 +40,13 @@ class CouplingFieldEncoding:
         '''
         TuplingIterator will give us all tuples of length p with values in range(N) without repeats, which is exactly what we need to assign the coupling coefficients to the appropriate index combinations in the cfe and raw_cfe.
         '''
-        for index_tuple in TuplingIterator(N, p, no_repeats=True):
+        for index_tuple in TuplingIterator(p, N, no_repeats=True):
             J = self.attributes.get_coupling_coefficient()
             targets = list_to_target_dict(index_tuple, scope=1)
-            dynamic_index(self.raw_cfe, targets) = J
+            dynamic_set(self.raw_cfe, targets, J)
             J_bar = torch.log(torch.abs(J)) # We will be storing J_bar in log space for numerical stability, as mentioned in the comments in the _initialize_cfe_for_quenched_spin_glass method. In the pure case, there are no corrections to be made, so J_bar is just the log of the absolute value of J (we will handle the sign of J separately in the energy calculations).
-            dynamic_index(self.cfe_sign, targets) = torch.sign(J)
-            dynamic_index(self.cfe, targets) = J_bar
+            dynamic_set(self.cfe_sign, targets, torch.sign(J))
+            dynamic_set(self.cfe, targets, J_bar)
 
     
     def _initialize_cfe_for_quenched_spin_glass(self):
@@ -65,10 +68,10 @@ class CouplingFieldEncoding:
             raise ValueError(f"Invalid interaction level: {self.attributes.interaction_level}")
 
         for combinatoric_layer in range(starting_combinatoric_layer, p+1):
-            for index_tuple in TuplingIterator(N, p, no_repeats=True):
+            for index_tuple in TuplingIterator(p, N, no_repeats=True):
                 J = self.attributes.get_coupling_coefficient()
                 targets = list_to_target_dict(index_tuple, scope=1)
-                dynamic_index(self.raw_cfe, targets) = J
+                dynamic_set(self.raw_cfe, targets, J)
 
                 J_bar = torch.log(torch.abs(J)) # This will be the adjusted coupling coefficient, once all the factors from the combinatoric layers below have been applied. We will iteratively adjust J_bar as we move up the combinatoric layers, and then assign it to the cfe at the end of the loop.
                 J_bar_sign = torch.sign(J)
@@ -95,5 +98,5 @@ class CouplingFieldEncoding:
                         J_bar += correction_power * dynamic_index(self.cfe, subset_targets) # This is the iterative adjustment of J_bar as we move up the combinatoric layers.
                         J_bar_sign *= dynamic_index(self.cfe_sign, subset_targets)**correction_power # This is the iterative adjustment of J_bar_sign as we move up the combinatoric layers.
 
-                dynamic_index(self.cfe, targets) = J_bar # Finally, we assign the fully adjusted coupling coefficient to the cfe at the appropriate index combination.
-                dynamic_index(self.cfe_sign, targets) = J_bar_sign # Finally, we assign the fully adjusted coupling coefficient sign to the cfe_sign at the appropriate index combination.
+                dynamic_set(self.cfe, targets, J_bar) # Finally, we assign the fully adjusted coupling coefficient to the cfe at the appropriate index combination.
+                dynamic_set(self.cfe_sign, targets, J_bar_sign) # Finally, we assign the fully adjusted coupling coefficient sign to the cfe_sign at the appropriate index combination.

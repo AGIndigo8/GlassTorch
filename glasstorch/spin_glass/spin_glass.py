@@ -1,6 +1,7 @@
-import pytorch as torch
-from .sping_glass_attributes import SpingGlassAttributes
+import torch
+from .spin_glass_attributes import SpinGlassAttributes
 from ..cfe.coupling_field_encoding import CouplingFieldEncoding
+from ..utilities.energy_calc import EnergyCalculator
 
 class SpinGlass:
     def __init__(self, attributes: SpinGlassAttributes, gamma=None):
@@ -9,6 +10,9 @@ class SpinGlass:
 
         self.cfe = CouplingFieldEncoding(self.attributes)
         self._quenched_harmony() # Just a safety check to make sure the quenched state of the spin glass and coupling field encoding match.
+
+        if self.attributes.is_quenched:
+            self.energy_calc = EnergyCalculator(self)
 
     '''
     Safety check to make sure the quenched state of the spin glass and coupling field encoding match. This is important because, instead of using inheritance, we have two flavors of spin glasses. The unquenched is an abstract template and the quenched will have definite couplings. The coupling encodings of unqueched flavor are indefinite.
@@ -39,7 +43,7 @@ class SpinGlass:
     '''
     def quench(self):
         quenched_rng = self.attributes.get_next_quenched_rng()
-        quenched_attributes = SpingGlassAttributes(
+        quenched_attributes = SpinGlassAttributes(
             p=self.attributes.p,
             N=self.attributes.N,
             interaction_level=self.attributes.interaction_level,
@@ -54,5 +58,17 @@ class SpinGlass:
             parent=self
         )
         return SpinGlass(quenched_attributes)
+    
+    def energy(self, sigma: torch.Tensor) -> torch.Tensor:
+        if not self.attributes.is_quenched:
+            raise ValueError("Energy is only defined for quenched spin glasses, as the coupling coefficients must be drawn and fixed for the energy calculation to be well-defined.")
+        
+        if sigma.shape[0] != self.attributes.N or sigma.dim() != 1:
+            raise ValueError(f"Sigma must be of shape ({self.attributes.N},), but got {sigma.shape}.")
+        
+        if self.attributes.mixture_type == "pure":
+            return self.energy_calc.p_aspect_contraction(sigma)
+        else:
+            return self.energy_calc.mixed_hamiltonian_contraction(sigma)
 
     

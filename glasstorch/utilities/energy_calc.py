@@ -1,13 +1,13 @@
-import pytorch as torch
+import torch
 import itertools
 
-from .dynamic_index import dynamic_index, dynamic_aspect, list_to_target_dict
+from .dynamic_index import dynamic_index, dynamic_aspect, list_to_target_dict, dynamic_set
 
 class EnergyCalculator:
     def __init__(self, spin_glass_model):
         self.model = spin_glass_model
         
-        if not self.model.is_quenched:
+        if not self.model.attributes.is_quenched:
             raise ValueError("EnergyCalculator requires a quenched spin glass model.")
         
         self.model._quenched_harmony()
@@ -31,7 +31,7 @@ class EnergyCalculator:
         N = sigma.shape[0]
         morph = torch.ones(*([2]*N), device=sigma.device) # shape (2, 2, ..., 2) with N dimensions
         for i in range(N):
-            dynamic_index(morph, {i: 1}) = sigma[i]
+            dynamic_set(morph, {i: 1}, sigma[i])
         return morph
 
     '''
@@ -80,12 +80,13 @@ class EnergyCalculator:
             raise ValueError(f"p must be between 2 and {self.p}, but got {p}.")
 
         sigma_morph = self.sigma_morph(sigma)
-        T = self.model.cfe + torch.log(sigma_morph)
-        signs = self.model.cfe_sign * torch.sign(sigma)
+        T = self.model.cfe.cfe + torch.log(torch.abs(sigma_morph))
+        signs = self.model.cfe.cfe_sign * torch.sign(sigma_morph).detach() # We detach the signs from the computational graph, as they are not differentiable and we will handle them separately in the energy calculation.
+        
         energy = 0.0
 
         for aspect_batch, sign_batch in zip(self.p_aspect_expasion(T, p, batch_size), self.p_aspect_expasion(signs, p, batch_size)):
-            energy += torch.sum(torch.exp(aspect_batch) * sign_batch)
+            energy += torch.sum(torch.exp(aspect_batch) * sign_batch.detach())
 
         return energy
 
